@@ -2,7 +2,7 @@
 <p> Sejam bem-vindos ao projeto de NodeJs, oferecido gratuitamente pela Squadra Digital em formato bootcamp <a href="https://inspire.squadra.com.br/programa-new-thinkers/"><strong> Squadra Ditigal e DigitalBot programa de trainee 2023</strong></a>.<br>
 
 <h2>💻 Objetivo do Projeto</h2>
-<p>Ao final deste projeto, o Dev será capaz de aprimorar seus conhecimentos em<strong>Javascript</strong>, <strong>Typescript</strong>. Para isso, uma <strong>API RESTful</strong> será desenvolvida com base no banco de dados disponibilizado pela Squadra, para que seja possível realizar a consulta, inserção e alteração nas tabelas UF, Município, Bairro, Endereço e Pessoa</p>.
+<p>Ao final deste projeto, o Dev será capaz de aprimorar seus conhecimentos em<strong>Javascript</strong>, <strong>Typescript</strong>. Para isso, uma <strong>API RESTful</strong> será desenvolvida com base no banco de dados disponibilizado pela Squadra, para que seja possível realizar a consulta, inserção e alteração nas tabelas UF, Município, Bairro, Endereço e Pessoa.</p>
 
 <h2>
 ⚠️ Pré-requistos ⚠️
