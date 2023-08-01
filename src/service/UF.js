@@ -241,6 +241,16 @@ uf.put('/', async (request, response) => {
         // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
         // Variável responsável por chamar o método que verifica se existe o códigoUF passado no corpo requisição.
+     
+        const codigoUF = Number(request.body.codigoUF);
+        if (isNaN(codigoUF)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar a UF, pois o codigo UF aceita apenas números!! E vc tentou inserir: ${dto.codigoUF}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+     
         let codigoUFExistente = await verificarCodigoUFExistente(dto);
         // Faz a validação utilizando o método citado anteriormente.
         if (!codigoUFExistente) {
