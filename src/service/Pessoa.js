@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const { abrirConexao, fecharConexao, conexao, commit, rollback, gerarSequence } = require('../database/conexao')
-const { verificarCodigoPessoa } = require("../validacoes/codigoExistente");
+const { verificarCodigoPessoa, verificarCodigoBairro, verificarCodigoEndereco } = require("../validacoes/codigoExistente");
+const { verificarLoginExistente, verificarRegistroLoginExistente } = require("../validacoes/loginExistente");
 
 const pessoa = Router();
 
@@ -18,9 +19,6 @@ async function consultarPessoa(request, response) {
         const filtroParametros = ['nome', 'sobrenome', 'idade', 'login', 'senha', 'status'];
         // Cria um objeto dto vazio para armazenar os valores dos parâmetros de filtro.
         let dto = {};
-        // Inicializa uma variável sql com uma consulta SQL que seleciona os campos da tabela Pessoa, caso não seja usado o filtro de codigoPessoa.
-        let sql = `SELECT "CODIGO_PESSOA", "NOME", "SOBRENOME", "IDADE", "LOGIN", "SENHA", "STATUS"
-           FROM "TB_PESSOA"`;
 
         // Verifica se o parâmetro codigoPessoa está presente na requisição.
         if (parametros.codigoPessoa) {
@@ -28,24 +26,93 @@ async function consultarPessoa(request, response) {
             if (isNaN(parametros.codigoPessoa)) {
                 let jsonRetorno = {
                     status: 400,
-                    mensagem: `Não foi possível realizar a consulta, pois o codigo pessoa aceita apenas números e vc pesquisou por: ${parametros.codigoPessoa}`
+                    mensagem: `Não foi possível realizar a consulta, pois o codigo pessoa aceita apenas números e você pesquisou por: ${parametros.codigoPessoa}`
                 };
                 return response.status(400).json(jsonRetorno);
             }
-            // Realiza a  consulta SQL para incluir o join com outras tabelas, caso seja passado o parâmetro codigoPessoa na query.
-            sql = `SELECT *
-         FROM TB_PESSOA
-         JOIN TB_ENDERECO ON TB_PESSOA.CODIGO_PESSOA = TB_ENDERECO.CODIGO_PESSOA
-         JOIN TB_BAIRRO ON TB_ENDERECO.CODIGO_BAIRRO = TB_BAIRRO.CODIGO_BAIRRO
-         JOIN TB_MUNICIPIO ON TB_BAIRRO.CODIGO_MUNICIPIO = TB_MUNICIPIO.CODIGO_MUNICIPIO
-         JOIN TB_UF ON TB_MUNICIPIO.CODIGO_UF = TB_UF.CODIGO_UF
-         WHERE TB_PESSOA.CODIGO_PESSOA = :codigoPessoa`;
+            // Realiza a consulta SQL específica para obter apenas um objeto que corresponda ao filtro codigoPessoa.
+            const sql = `SELECT *
+                FROM TB_PESSOA
+                JOIN TB_ENDERECO ON TB_PESSOA.CODIGO_PESSOA = TB_ENDERECO.CODIGO_PESSOA
+                JOIN TB_BAIRRO ON TB_ENDERECO.CODIGO_BAIRRO = TB_BAIRRO.CODIGO_BAIRRO
+                JOIN TB_MUNICIPIO ON TB_BAIRRO.CODIGO_MUNICIPIO = TB_MUNICIPIO.CODIGO_MUNICIPIO
+                JOIN TB_UF ON TB_MUNICIPIO.CODIGO_UF = TB_UF.CODIGO_UF
+                WHERE TB_PESSOA.CODIGO_PESSOA = :codigoPessoa`;
 
             // Adiciona o valor do parâmetro ao atributo codigoPessoa do objeto Dto.
             dto.codigoPessoa = parametros.codigoPessoa;
 
+            // Executa a consulta SQL utilizando o objeto conexaoAberta e os valores dos parâmetros de filtro. (sql, dto)
+            const resultado = await conexaoAberta.execute(sql, dto);
+
+            // Se houver resultado, retorna apenas um objeto correspondente ao filtro codigoPessoa.
+            if (resultado.rows.length > 0) {
+                const row = resultado.rows[0];
+
+                const mapEnderecos = new Map();
+
+                // Loop para iterar sobre os endereços encontrados na consulta SQL e adicionar ao Map
+                for (let i = 0; i < resultado.rows.length; i++) {
+                    // Variável para armazenar o índice inicial da coluna dos dados do endereço atual
+                    const indiceInicioEndereco = 0; // Cada endereço ocupa 19 posições no resultado (7 colunas da pessoa + 18 colunas do endereço)
+
+                    // Criar o objeto de endereço
+                    const endereco = {
+                        codigoEndereco: resultado.rows[i][indiceInicioEndereco + 7],
+                        codigoPessoa: resultado.rows[i][indiceInicioEndereco + 8],
+                        codigoBairro: resultado.rows[i][indiceInicioEndereco + 9],
+                        nomeRua: resultado.rows[i][indiceInicioEndereco + 10],
+                        numero: resultado.rows[i][indiceInicioEndereco + 11],
+                        complemento: resultado.rows[i][indiceInicioEndereco + 12],
+                        cep: resultado.rows[i][indiceInicioEndereco + 13],
+                        bairro: {
+                            codigoBairro: resultado.rows[i][indiceInicioEndereco + 14],
+                            codigoMunicipio: resultado.rows[i][indiceInicioEndereco + 15],
+                            nome: resultado.rows[i][indiceInicioEndereco + 16],
+                            status: resultado.rows[i][indiceInicioEndereco + 17],
+                            municipio: {
+                                codigoMunicipio: resultado.rows[i][indiceInicioEndereco + 18],
+                                codigoUF: resultado.rows[i][indiceInicioEndereco + 19],
+                                nome: resultado.rows[i][indiceInicioEndereco + 20],
+                                status: resultado.rows[i][indiceInicioEndereco + 21],
+                                uf: {
+                                    codigoUF: resultado.rows[i][indiceInicioEndereco + 22],
+                                    sigla: resultado.rows[i][indiceInicioEndereco + 23],
+                                    nome: resultado.rows[i][indiceInicioEndereco + 24],
+                                    status: resultado.rows[i][indiceInicioEndereco + 25]
+                                }
+                            }
+                        },
+                    };
+
+                    // Adicionar o endereço criado ao Map, utilizando o codigoEndereco como chave
+                    mapEnderecos.set(endereco.codigoEndereco, endereco);
+                }
+
+                const pessoa = {
+                    codigoPessoa: row[0],
+                    nome: row[1],
+                    sobrenome: row[2],
+                    idade: row[3],
+                    login: row[4],
+                    senha: row[5],
+                    status: row[6],
+                    endereco: Array.from(mapEnderecos.values()) // Transformar os valores do Map em um array
+                };
+
+                // Gera o status 200 e gera o objeto em formato json.
+                response.status(200).json(pessoa);
+            } else {
+                // Se não houver resultado para o filtro codigoPessoa, retorna uma lista vazia.
+                response.status(200).json([]);
+            }
+
+
         } else {
-            // Se o parâmetro codigoPessoa não esteja presente na query, itera sobre cada parâmetro de filtro e, se estiver presente na solicitação(request.query[param]), adiciona uma cláusula WHERE na consulta sql e adiciona o valor do parâmetro ao objeto dto.
+            // Caso contrário, itera sobre cada parâmetro de filtro e, se estiver presente na solicitação(request.query[param]), adiciona uma cláusula WHERE na consulta sql e adiciona o valor do parâmetro ao objeto dto.
+            let sql = `SELECT "CODIGO_PESSOA", "NOME", "SOBRENOME", "IDADE", "LOGIN", "SENHA", "STATUS"
+                FROM "TB_PESSOA"`;
+
             filtroParametros.forEach((parametro, index) => {
                 if (parametros[parametro]) {
                     // Adiciona as condições WHERE e AND à consulta SQL conforme os parâmetros informados
@@ -56,69 +123,50 @@ async function consultarPessoa(request, response) {
                     dto[`${parametro}${index}`] = parametros[parametro];
                 }
             });
-        }
-        // Executa a consulta SQL utilizando o objeto conexaoAberta e os valores dos parâmetros de filtro. (sql, dto)
-        let resultado = await conexaoAberta.execute(sql, dto);
-        // Cria uma lista vazia de pessoas.
-        let listaPessoas = [];
-        // Cria um map para armazenar as pessoas e seus endereços.
-        let pessoaMap = new Map();
 
-        // Percorre as linhas de resultado da consulta
-        resultado.rows.forEach((row) => {
-            const codigoPessoa = row[0];
-            // Se a pessoa ainda não existe no map, cria um novo objeto de pessoa e o adiciona ao map.
-            if (!pessoaMap.has(codigoPessoa)) {
-                pessoaMap.set(codigoPessoa, {
-                    codigoPessoa: row[0],
-                    nome: row[1],
-                    sobrenome: row[2],
-                    idade: row[3],
-                    login: row[4],
-                    senha: row[5],
-                    status: row[6],
-                    enderecos: []
-                });
+            if (request.query.status) {
+                const status = Number(request.query.status);
+                if (isNaN(status)) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível realizar a consulta, pois o status aceita apenas números!! E vc pesquisou por: ${request.query.status}`
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
             }
-            // Obtem a referência da pessoa no map
-            const pessoa = pessoaMap.get(codigoPessoa);
-            // Se o parâmetro codigoPessoa estiver presente na requisição, concatena os dados de endereço à pessoa.
-            if (parametros.codigoPessoa) {
-                pessoa.enderecos.push({
-                    codigoEndereco: row[7],
-                    codigoPessoa: row[8],
-                    codigoBairro: row[9],
-                    nomeRua: row[10],
-                    numero: row[11],
-                    complemento: row[12],
-                    cep: row[13],
-                    bairro: {
-                        codigoBairro: row[14],
-                        codigoMunicipio: row[15],
-                        nome: row[16],
-                        status: row[17],
-                    },
-                    municipio: {
-                        codigoMunicipio: row[18],
-                        codigoUF: row[19],
-                        nome: row[20],
-                        status: row[21],
-                        uf: {
-                            codigoUF: row[22],
-                            sigla: row[23],
-                            nome: row[24],
-                            status: row[25]
-                        }
-                    }
-                });
-            }
-        });
-        // Converter o map em um array de pessoas e os ordena pelo codigoPessoa em ordem decrescente.
-        listaPessoas = Array.from(pessoaMap.values()).sort((a, b) => b.codigoPessoa - a.codigoPessoa);
-        // Gera o log com os possíveis dados que podem ou não existir na tabela Pessoa.
-        console.log(resultado.rows);
-        // Gera o status 200 e gera a lista em formato json caso ocorra tudo certo!
-        response.status(200).json(listaPessoas);
+
+            // Executa a consulta SQL utilizando o objeto conexaoAberta e os valores dos parâmetros de filtro. (sql, dto)
+            const resultado = await conexaoAberta.execute(sql, dto);
+            // Cria uma lista vazia de pessoas.
+            let listaPessoas = [];
+            // Cria um map para armazenar as pessoas e seus endereços.
+            let pessoaMap = new Map();
+
+            // Percorre as linhas de resultado da consulta
+            resultado.rows.forEach((row) => {
+                const codigoPessoa = row[0];
+                // Se a pessoa ainda não existe no map, cria um novo objeto de pessoa e o adiciona ao map.
+                if (!pessoaMap.has(codigoPessoa)) {
+                    pessoaMap.set(codigoPessoa, {
+                        codigoPessoa: row[0],
+                        nome: row[1],
+                        sobrenome: row[2],
+                        idade: row[3],
+                        login: row[4],
+                        senha: row[5],
+                        status: row[6],
+                        enderecos: []
+                    });
+                }
+            })
+
+            // Converter o map em um array de pessoas e os ordena pelo codigoPessoa em ordem decrescente.
+            listaPessoas = Array.from(pessoaMap.values()).sort((a, b) => b.codigoPessoa - a.codigoPessoa);
+            // Gera o log com os possíveis dados que podem ou não existir na tabela Pessoa.
+            console.log(resultado.rows);
+            // Gera o status 200 e gera a lista em formato json caso ocorra tudo certo!
+            response.status(200).json(listaPessoas);
+        }
 
         // Capta os possíveis erros gerados
     } catch (err) {
@@ -140,7 +188,6 @@ async function consultarPessoa(request, response) {
         await fecharConexao();
     }
 }
-
 // FUNÇÃO QUE PERMITE ADICIONAR UMA PESSOA ATRAVÉS DE UMA REQUISIÇÃO POST
 pessoa.post('/', postPessoa);
 
@@ -152,13 +199,33 @@ async function postPessoa(request, response) {
         // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
 
+
+        const status = Number(dto.status);
+        if (isNaN(status)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível inserir a Pessoa, pois o status aceita apenas números!! E vc tentou inserir: ${dto.status}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
         // Valida apenas inserções do status com valor 1.
-        if (dto.status !== 1) {
+        if (dto.status != 1) {
             return response.status(400).json({
                 status: 400,
                 mensagem: `Não é possível adicionar um status com um número diferente de 1!  Status inserido: ${dto.status}`
             });
         }
+
+        let loginExistente = await verificarLoginExistente(dto, "TB_PESSOA");
+
+        if (loginExistente) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Já existe um registro com o mesmo login: ${dto.login}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         // Gera um código de forma crescente por meio de uma sequência para o atributo codigoPessoa(Primary Key).
         const codigoPessoa = await gerarSequence('SEQUENCE_PESSOA');
         // Adiciona o código de pessoa ao DTO.
@@ -208,6 +275,25 @@ async function postPessoa(request, response) {
                 complemento: endereco.complemento,
                 cep: endereco.cep
             };
+
+            const codigoBairro = Number(endereco.codigoBairro);
+            if (isNaN(codigoBairro)) {
+                let jsonRetorno = {
+                    status: 400,
+                    mensagem: `Não foi possível cadastar a pessoa, pois o codigo bairro aceita apenas números!! E vc pesquisou por: ${endereco.codigoBairro}`
+                };
+                return response.status(400).json(jsonRetorno);
+            }
+
+            let codigoBairroExistente = await verificarCodigoBairro(endereco)
+            // Faz a validação utilizando o método citado anteriormente.
+            if (!codigoBairroExistente) {
+                let jsonRetorno = {
+                    status: 400,
+                    mensagem: `Não foi possível inserir a Pessoa, visto que não existe um bairro com o código: ${endereco.codigoBairro}`,
+                };
+                return response.status(400).json(jsonRetorno);
+            }
             // Executa o SQL para gravar os dados no banco de dados.
             let resultSet = await conexaoAberta.execute(enderecoSql, enderecoDto);
             // Gera um log para sabermos se os registros foram inseridos com sucesso.
@@ -241,17 +327,21 @@ async function postPessoa(request, response) {
 
 // FUNÇÃO QUE PERMITE ALTERAR UMA PESSOA ATRAVÉS DE UMA REQUISIÇÃO PUT
 pessoa.put('/', atualizarPessoa)
-
 async function atualizarPessoa(request, response) {
-    // Envolve o código para o tratamento de erros.
     try {
-        // Captura os dados enviados na requisição
         const dto = request.body;
-        // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
-        // Variável responsável por chamar o método que verifica se existe o codigoPessoa passado no corpo requisição.
-        let codigoPessoaExistente = await verificarCodigoPessoa(dto)
-        // Faz a validação utilizando o método citado anteriormente.
+      
+        const codigoPessoa = Number(request.body.codigoPessoa);
+        if (isNaN(codigoPessoa)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar a Pessoa, pois o codigo Pessoa aceita apenas números!! E vc tentou inserir: ${dto.codigoPessoa}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        let codigoPessoaExistente = await verificarCodigoPessoa(dto);
         if (!codigoPessoaExistente) {
             let jsonRetorno = {
                 status: 400,
@@ -259,10 +349,16 @@ async function atualizarPessoa(request, response) {
             };
             return response.status(400).json(jsonRetorno);
         }
-        // Atribui o valor de codigoPessoa = dto.codigoPessoa
-        const codigoPessoa = dto.codigoPessoa;
 
-        // Valida apenas inserções do status = 1 ou 2.
+        const status = Number(request.body.status);
+        if (isNaN(status)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar a Pessoa, pois o status aceita apenas números!! E vc tentou inserir: ${dto.status}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         if (dto.status < 1 || dto.status > 2) {
             let jsonRetorno = {
                 status: 400,
@@ -271,18 +367,28 @@ async function atualizarPessoa(request, response) {
             return response.status(400).json(jsonRetorno);
         }
 
-        // Gera o SQL para alterar os valores de uma pessoa no banco de dados.
+        let loginExistente = await verificarLoginExistente(dto, "TB_PESSOA");
+        let registroLoginExistente = await verificarRegistroLoginExistente(dto, "TB_PESSOA", dto);
+
+        if (loginExistente && registroLoginExistente) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Já existe um registro com o mesmo login: ${dto.login}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         const updatePessoaSql = `
-      UPDATE TB_PESSOA
-      SET "NOME" = :nome,
-          "SOBRENOME" = :sobrenome,
-          "IDADE" = :idade,
-          "LOGIN" = :login,
-          "SENHA" = :senha,
-          "STATUS" = :status
-      WHERE "CODIGO_PESSOA" = :codigoPessoa
-    `;
-        // Objeto Dto para a pessoa.
+            UPDATE TB_PESSOA
+            SET "NOME" = :nome,
+                "SOBRENOME" = :sobrenome,
+                "IDADE" = :idade,
+                "LOGIN" = :login,
+                "SENHA" = :senha,
+                "STATUS" = :status
+            WHERE "CODIGO_PESSOA" = :codigoPessoa
+        `;
+
         const pessoaDto = {
             codigoPessoa: dto.codigoPessoa,
             nome: dto.nome,
@@ -292,68 +398,205 @@ async function atualizarPessoa(request, response) {
             senha: dto.senha,
             status: dto.status
         };
-        // Executa o SQL citado anteriormente.
-        let resultSet = await conexaoAberta.execute(updatePessoaSql, pessoaDto);
-        // Gera um log para sabermos se os registros foram alterados com sucesso.
-        console.log('FORAM ALTERADOS: ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS.');
-        // Obtem a lista de endereços do dto caso ela exista.
-        const enderecos = dto.enderecos || [];
-        // Percorre a lista de endereços e insere cada um na tabela de enderecos.
-        for (const endereco of enderecos) {
-            // Gera um código de forma crescente por meio de uma sequência para o atributo codigoEndereco(Foreign Key).
-            const codigoEndereco = await gerarSequence('SEQUENCE_ENDERECO');
-            // Adicionar o codigoEndereco e o codigoPessoa ao objeto de endereço.
-            endereco.codigoEndereco = codigoEndereco;
-            endereco.codigoPessoa = codigoPessoa;
 
-            // Consulta SQL para inserir o endereço na tabela de enderecos.
-            const insertEnderecoSql = `
-        INSERT INTO TB_ENDERECO ("CODIGO_ENDERECO", "CODIGO_PESSOA", "CODIGO_BAIRRO", "NOME_RUA", "NUMERO", "COMPLEMENTO", "CEP")
-        VALUES (:codigoEndereco, :codigoPessoa, :codigoBairro, :nomeRua, :numero, :complemento, :cep)
-      `;
-            // Objeto Dto para o endereço.
-            const enderecoDto = {
-                codigoEndereco: endereco.codigoEndereco,
-                codigoPessoa: endereco.codigoPessoa,
-                codigoBairro: endereco.codigoBairro || null,
-                nomeRua: endereco.nomeRua || null,
-                numero: endereco.numero || null,
-                complemento: endereco.complemento || null,
-                cep: endereco.cep || null
-            };
-            // Executa o SQL para inserir o endereço na tabela de enderecos.
-            let resultSet = await conexaoAberta.execute(insertEnderecoSql, enderecoDto);
-            // Gera um log para sabermos se os registros foram inseridos com sucesso.
-            console.log('FORAM INSERIDOS ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS');
+        let resultSet = await conexaoAberta.execute(updatePessoaSql, pessoaDto);
+        console.log('FORAM ALTERADOS: ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS.');
+
+        const enderecos = dto.enderecos || [];
+
+        for (const endereco of enderecos) {
+            if (endereco.codigoEndereco) {
+                const updateEnderecoSql = `
+                    UPDATE TB_ENDERECO
+                    SET "CODIGO_PESSOA" = :codigoPessoa,
+                        "CODIGO_BAIRRO" = :codigoBairro,
+                        "NOME_RUA" = :nomeRua,
+                        "NUMERO" = :numero,
+                        "COMPLEMENTO" = :complemento,
+                        "CEP" = :cep
+                    WHERE "CODIGO_ENDERECO" = :codigoEndereco
+                `;
+
+                const enderecoDto = {
+                    codigoEndereco: endereco.codigoEndereco,
+                    codigoPessoa: endereco.codigoPessoa,
+                    codigoBairro: endereco.codigoBairro || null,
+                    nomeRua: endereco.nomeRua || null,
+                    numero: endereco.numero || null,
+                    complemento: endereco.complemento || null,
+                    cep: endereco.cep || null
+                };
+
+                const codigoPessoa = Number(enderecoDto.codigoPessoa);
+                if (isNaN(codigoPessoa)) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, pois o codigo Pessoa aceita apenas números e vc tentou inserir: ${enderecoDto.codigoPessoa}`
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                let codigoPessoaExistente = await verificarCodigoPessoa(enderecoDto);
+                if (!codigoPessoaExistente) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, visto que não existe uma Pessoa com o código: ${enderecoDto.codigoPessoa}`,
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                const codigoEndereco = Number(enderecoDto.codigoEndereco);
+                if (isNaN(codigoEndereco)) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, pois o codigo Endereco aceita apenas números e vc tentou inserir: ${enderecoDto.codigoEndereco}`
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                let codigoEnderecoExistente = await verificarCodigoEndereco(enderecoDto)
+                // Faz a validação utilizando o método citado anteriormente.
+                if (!codigoEnderecoExistente) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, visto que não existe um codigo Endereço com o código: ${enderecoDto.codigoEndereco}`,
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                const codigoBairro = Number(enderecoDto.codigoBairro);
+                if (isNaN(codigoBairro)) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, pois o codigo Bairro aceita apenas números e vc tentou inserir: ${enderecoDto.codigoBairro}`
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                let codigoBairroExistente = await verificarCodigoBairro(enderecoDto)
+                // Faz a validação utilizando o método citado anteriormente.
+                if (!codigoBairroExistente) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, visto que não existe um bairro com o código: ${enderecoDto.codigoBairro}`,
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+
+                resultSet = await conexaoAberta.execute(updateEnderecoSql, enderecoDto);
+                console.log('FORAM ALTERADOS ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS');
+
+            } else {
+
+                dto.codigoEndereco = await gerarSequence('SEQUENCE_ENDERECO');
+
+                const insertEnderecoSql = `
+                    INSERT INTO TB_ENDERECO ("CODIGO_ENDERECO", "CODIGO_PESSOA", "CODIGO_BAIRRO", "NOME_RUA", "NUMERO", "COMPLEMENTO", "CEP")
+                    VALUES (:codigoEndereco, :codigoPessoa, :codigoBairro, :nomeRua, :numero, :complemento, :cep)
+                `;
+
+                const enderecoDto = {
+                    codigoEndereco: dto.codigoEndereco,
+                    codigoPessoa: dto.codigoPessoa,
+                    codigoBairro: endereco.codigoBairro || null,
+                    nomeRua: endereco.nomeRua || null,
+                    numero: endereco.numero || null,
+                    complemento: endereco.complemento || null,
+                    cep: endereco.cep || null
+                };
+
+                let resultSet = await conexaoAberta.execute(insertEnderecoSql, enderecoDto);
+                console.log('FORAM INSERIDOS ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS');
+            }
         }
-        // Confirma as inserções feitas e salva no banco de dados!
+
+
         await commit();
-        // Ao final da requisição com status 200 (OK), retorna a lista com todas as Pessoas presentes no banco de dados.
         await consultarPessoa(request, response);
 
-        // Capta os possíveis erros gerados.
     } catch (err) {
-        // Mostra no terminal os possíveis erros gerados na requisição.
         console.log(err);
-        // Método responsável por desfazer uma ação caso ocorra um erro.
         await rollback();
-        // Variável criada para o usuário visualizar o status e a mensagem de erro após sua requisição falhar!
         let jsonRetorno = {
             status: 400,
             mensagem: 'Não foi possível alterar a pessoa no banco de dados!'
         };
-        // retorna o status e a mensagem de erro para o usuário.
         response.status(400).json(jsonRetorno);
-
-        // Finally é usado para garantir que independente de erros a aplicação será fechado a conexao com o banco de dados.
     } finally {
-        // Fecha a conexão com o banco de dados.
         await fecharConexao();
     }
 };
 
+pessoa.delete('/', deletarPessoa)
+
+async function deletarPessoa(request, response) {
+    try {
+        // Captura os dados enviados na requisição
+        const dto = request.body;
+        // Abre a conexão com o banco de dados.
+        const conexaoAberta = await abrirConexao();
+
+        const codigoPessoa = Number(dto.codigoPessoa);
+        if (isNaN(codigoPessoa)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível realizar a requisição, pois o codigo Pessoa aceita apenas números. E vc pesquisou por: '${dto.codigoPessoa}' `
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        // Verifica se a pessoa com o códigoPessoa informado existe no banco de dados.
+        const codigoPessoaExistente = await verificarCodigoPessoa(dto);
+        if (!codigoPessoaExistente) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível excluir a Pessoa, pois não existe uma pessoa com o código: ${dto.codigoPessoa} `,
+            };
+            return response.status(400).json(jsonRetorno);
+        }
 
 
+        // Gera o SQL para excluir a pessoa da tabela TB_PESSOA.
+        const deletePessoaSql = `
+            DELETE FROM TB_PESSOA
+            WHERE "CODIGO_PESSOA" = :codigoPessoa
+        `;
+        const pessoaDto = {
+            codigoPessoa: dto.codigoPessoa,
+        };
+        // Executa o SQL de exclusão da pessoa.
+        let resultSetPessoa = await conexaoAberta.execute(deletePessoaSql, pessoaDto);
+        console.log('FORAM EXCLUÍDOS: ' + resultSetPessoa.rowsAffected + ' REGISTROS DE ENDEREÇO NO BANCO DE DADOS.'); // Registros de endereço excluídos.
 
+        // Gera o SQL para excluir os endereços associados à pessoa da tabela TB_ENDERECO.
+        const deleteEnderecosSql = `
+            DELETE FROM TB_ENDERECO
+            WHERE "CODIGO_PESSOA" = :codigoPessoa
+        `;
+        // Executa o SQL de exclusão dos endereços associados à pessoa.
+        let resultSet = await conexaoAberta.execute(deleteEnderecosSql, pessoaDto);
+        console.log('FORAM EXCLUÍDOS: ' + resultSet.rowsAffected + ' REGISTROS DE ENDEREÇO NO BANCO DE DADOS.'); // Registros de endereço excluídos.
+
+        // Confirma as exclusões feitas e salva no banco de dados!
+        await commit();
+
+        // Ao final da requisição com status 200 (OK), retorna a lista com todas as Pessoas presentes no banco de dados.
+        await consultarPessoa(request, response);
+
+    } catch (err) {
+        // Tratamento de erros.
+        console.log(err);
+        await rollback();
+        let jsonRetorno = {
+            status: 400,
+            mensagem: 'Não foi possível excluir a pessoa do banco de dados!',
+        };
+        response.status(400).json(jsonRetorno);
+    } finally {
+        // Fecha a conexão com o banco de dados.
+        await fecharConexao();
+    }
+}
 
 module.exports = pessoa;

@@ -62,19 +62,45 @@ async function consultarBairro(request, response) {
             dto.codigoMunicipio = codigoMunicipio;
         }
 
+        if (request.query.status) {
+            const status = Number(request.query.status);
+            if (isNaN(status)) {
+                let jsonRetorno = {
+                    status: 400,
+                    mensagem: `Não foi possível realizar a consulta, pois o status aceita apenas números!! E vc pesquisou por: ${request.query.status}`
+                };
+                return response.status(400).json(jsonRetorno);
+            }
+        }
+
         // Executa a consulta SQL utilizando o objeto conexaoAberta e os valores dos parâmetros de filtro. (sql, dto)
         let resultado = await conexaoAberta.execute(sql, dto);
-        // Mapeia o resultado da consulta para um array listaBairro, onde cada objeto e sua posição é representado.
-        let listaBairros = resultado.rows.map(row => ({
-            codigoBairro: row[0],
-            codigoMunicipio: row[1],
-            nome: row[2],
-            status: row[3]
-        }));
+        let listaBairros = []
 
-        // Método do Javascript para ordenar uma lista.
-        // após a arrow function, ao utilizar "b" antes do "a" faz com que a lista seja ordenada de forma decrescente.
-        listaBairros.sort((a, b) => b.codigoBairro - a.codigoBairro);
+        if (request.query.codigoBairro) {
+            if (resultado.rows.length > 0) {
+                const row = resultado.rows[0];
+                listaBairros = {
+                    codigoBairro: row[0],
+                    codigoMunicipio: row[1],
+                    nome: row[2],
+                    status: row[3]
+                };
+            }
+        } else {
+
+            // Mapeia o resultado da consulta para um array listaBairro, onde cada objeto e sua posição é representado.
+            listaBairros = resultado.rows.map(row => ({
+                codigoBairro: row[0],
+                codigoMunicipio: row[1],
+                nome: row[2],
+                status: row[3]
+            }));
+
+            // Método do Javascript para ordenar uma lista.
+            // após a arrow function, ao utilizar "b" antes do "a" faz com que a lista seja ordenada de forma decrescente.
+            listaBairros.sort((a, b) => b.codigoBairro - a.codigoBairro);
+        }
         // Gera o log com os possíveis dados que podem ou não existir na tabela Bairro.
         console.log(resultado.rows);
         // Gera o status 200 e gera a lista em formato json caso ocorra tudo certo!
@@ -110,11 +136,30 @@ async function adicionarBairro(request, response) {
         let dto = request.body;
         // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
+
+        const status = Number(request.body.status);
+        if (isNaN(status)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível inserir o Bairro, pois o status aceita apenas números!! E você tentou inserir: ${dto.status}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         // Valida apenas inserções do status com valor 1.
-        if (dto.status !== 1) {
+        if (dto.status != 1) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Não é possível adicionar um status com um número diferente de 1!  Status inserido: ${dto.status}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        const codigoMunicipio = Number(request.body.codigoMunicipio);
+        if (isNaN(codigoMunicipio)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível inserir o município, pois o codigo Bairro aceita apenas números e vc tentou inserir: ${dto.codigoMunicipio}`
             };
             return response.status(400).json(jsonRetorno);
         }
@@ -171,6 +216,16 @@ async function alterarBairro(request, response) {
         let dto = request.body;
         // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
+
+        const codigoBairro = Number(dto.codigoBairro);
+        if (isNaN(codigoBairro)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar o Bairro, pois o codigo Bairro aceita apenas números e vc tentou inserir: ${request.body.codigoBairro}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         // Variável responsável por chamar o método que verifica se existe o codigoBairro passado no corpo da requisição.
         let codigoBairroExistente = await verificarCodigoBairro(dto)
         // Faz a validação utilizando o método citado anteriormente.
@@ -181,6 +236,16 @@ async function alterarBairro(request, response) {
             };
             return response.status(400).json(jsonRetorno);
         }
+
+        const codigoNunicipio = Number(dto.codigoMunicipio);
+        if (isNaN(codigoNunicipio)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar o Bairro, pois o codigo Bairro aceita apenas números e vc tentou inserir: ${request.body.codigoMunicipio}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         // Variável responsável por chamar o método que verifica se existe o codigoMunicipio passado no corpo da requisição.
         let codigoMunicipioExistente = await verificarCodigoMunicipio(dto)
         // Faz a validação utilizando o método citado anteriormente.
@@ -188,6 +253,15 @@ async function alterarBairro(request, response) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Não foi possível alterar o Bairro, visto que não existe um município com o código: ${dto.codigoMunicipio}`,
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        const status = Number(request.body.status);
+        if (isNaN(status)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar o Bairro, pois o status aceita apenas números!! E vc tentou inserir: ${dto.status}`
             };
             return response.status(400).json(jsonRetorno);
         }
@@ -226,6 +300,68 @@ async function alterarBairro(request, response) {
         return response.status(400).json(jsonRetorno);
 
         // Finally é usado para garantir que uma ação seja realizada independente de erros na aplicação.
+    } finally {
+        // Fecha a conexão com o banco de dados.
+        await fecharConexao();
+    }
+}
+
+bairro.delete('/', deletarBairro)
+
+async function deletarBairro(request, response) {
+    try {
+        // Captura os dados enviados na requisição
+        const dto = request.body;
+        // Abre a conexão com o banco de dados.
+        const conexaoAberta = await abrirConexao();
+
+        const codigoBairro = Number(dto.codigoBairro);
+        if (isNaN(codigoBairro)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível realizar a requisição, pois o codigo Bairro aceita apenas números. E vc pesquisou por: '${dto.codigoBairro}' `
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        // Verifica se o bairro com o códigoBairro informado existe no banco de dados.
+        const codigoBairroExistente = await verificarCodigoBairro(dto);
+        if (!codigoBairroExistente) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível excluir o Bairro, pois não existe um bairro com o código: ${dto.codigoBairro} `,
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+
+        // Gera o SQL para excluir o bairro da tabela TB_BAIRRO.
+        const deleteBairroSql = `
+            DELETE FROM TB_BAIRRO
+            WHERE "CODIGO_BAIRRO" = :codigoBairro
+        `;
+        const bairroDto = {
+            codigoBairro: dto.codigoBairro,
+        };
+        // Executa o SQL de exclusão do bairro.
+        let resultSetBairro = await conexaoAberta.execute(deleteBairroSql, bairroDto);
+        console.log('FORAM EXCLUÍDOS: ' + resultSetBairro.rowsAffected + ' REGISTROS DE BAIRRO NO BANCO DE DADOS.'); // Registros de endereço excluídos.
+
+        // Confirma as exclusões feitas e salva no banco de dados!
+        await commit();
+
+        // Ao final da requisição com status 200 (OK), retorna a lista com todas os Municípios presentes no banco de dados.
+        await consultarBairro(request, response);
+
+    } catch (err) {
+        // Tratamento de erros.
+        console.log(err);
+        await rollback();
+        let jsonRetorno = {
+            status: 400,
+            mensagem: 'Não foi possível excluir o bairro do banco de dados!',
+        };
+        response.status(400).json(jsonRetorno);
     } finally {
         // Fecha a conexão com o banco de dados.
         await fecharConexao();

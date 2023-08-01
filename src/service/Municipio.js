@@ -13,7 +13,7 @@ async function consultarMunicipio(request, response) {
         // Chama o método abrir conexão para estabelecer a ligação com o banco de dados.
         const conexaoAberta = await abrirConexao();
         // Inicializa uma variável sql com uma consulta SQL que seleciona os campos da tabela Municipio.
-        let sql = 'SELECT CODIGO_MUNICIPIO, NOME, STATUS, CODIGO_UF FROM TB_MUNICIPIO';
+        let sql = 'SELECT CODIGO_MUNICIPIO, CODIGO_UF, NOME, STATUS FROM TB_MUNICIPIO';
         // Cria um objeto dto vazio para armazenar os valores dos parâmetros de filtro.
         let dto = {};
         // Define uma 'Lista' filtroParametros contendo os nomes dos parâmetros que podem ser usados como filtragem da tabela Municipio.
@@ -60,18 +60,46 @@ async function consultarMunicipio(request, response) {
             sql += ' CODIGO_UF = :codigoUF';
             dto.codigoUF = request.query.codigoUF;
         }
+
+        if (request.query.status) {
+            const status = Number(request.query.status);
+            if (isNaN(status)) {
+                let jsonRetorno = {
+                    status: 400,
+                    mensagem: `Não foi possível realizar a consulta, pois o status aceita apenas números!! E vc pesquisou por: ${request.query.status}`
+                };
+                return response.status(400).json(jsonRetorno);
+            }
+        }
         // Executa a consulta SQL utilizando o objeto conexaoAberta e os valores dos parâmetros de filtro. (sql, dto)
         let resultado = await conexaoAberta.execute(sql, dto);
-        // Mapeia o resultado da consulta para um array listaMunicipio, onde cada objeto e sua posição é representado.
-        let listaMunicipio = resultado.rows.map(row => ({
-            codigoMunicipio: row[0],
-            nome: row[1],
-            status: row[2],
-            codigoUF: row[3],
-        }));
-        // Método do Javascript para ordenar uma lista.
-        // após a arrow function, ao utilizar "b" antes do "a" faz com que a lista seja ordenada de forma decrescente.
-        listaMunicipio.sort((a, b) => b.codigoMunicipio - a.codigoMunicipio);
+        let listaMunicipio = []
+
+        if (request.query.codigoMunicipio) {
+            if (resultado.rows.length > 0) {
+                const row = resultado.rows[0];
+                listaMunicipio = {
+                    codigoMunicipio: row[0],
+                    codigoUF: row[1],
+                    nome: row[2],
+                    status: row[3],
+                };
+            }
+        }
+
+        else {
+
+            // Mapeia o resultado da consulta para um array listaMunicipio, onde cada objeto e sua posição é representado.
+            listaMunicipio = resultado.rows.map(row => ({
+                codigoMunicipio: row[0],
+                codigoUF: row[1],
+                nome: row[2],
+                status: row[3],
+            }));
+            // Método do Javascript para ordenar uma lista.
+            // após a arrow function, ao utilizar "b" antes do "a" faz com que a lista seja ordenada de forma decrescente.
+            listaMunicipio.sort((a, b) => b.codigoMunicipio - a.codigoMunicipio);
+        }
         // Gera o log com os possíveis dados que podem ou não existir na tabela Municipio.
         console.log(resultado.rows);
         // Gera o status 200 e gera a lista em formato json caso ocorra tudo certo!
@@ -107,14 +135,35 @@ async function adicionaMunicipio(request, response) {
         let dto = request.body;
         // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
-        // Valida apenas inserções do status com valor 1.
-        if (dto.status !== 1) {
+
+        const status = Number(request.body.status);
+        if (isNaN(status)) {
             let jsonRetorno = {
                 status: 400,
-                mensagem: `Não é possível adicionar um status com um número diferente de 1!  Status inserido: ${dto.status}`
+                mensagem: `Não foi possível inserir o Município, pois o status aceita apenas números!! E você tentou inserir: ${dto.status}`
             };
             return response.status(400).json(jsonRetorno);
         }
+
+        // Valida apenas inserções do status com valor 1.
+        if (dto.status != 1) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não é possível adicionar um status com um número diferente de '1' Status inserido: ${dto.status}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+
+        const codigoUF = Number(request.body.codigoUF);
+        if (isNaN(codigoUF)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível inserir o município, pois o codigo UF aceita apenas números e vc tentou inserir: ${dto.codigoUF}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         // Variável responsável por chamar o método de validação de codigoUF já existente no banco de dados.
         let codigoUFExistente = await verificarCodigoUFExistente(dto);
         // Verifica se já existe um registro com o mesmo codigoUF.
@@ -169,12 +218,31 @@ async function alterarMunicipio(request, response) {
         // Abre a conexão com o banco de dados.
         const conexaoAberta = await abrirConexao();
         // Variável responsável por chamar o método que verifica se existe o codigoMunicipio passado no corpo da requisição.
+
+        const codigoNunicipio = Number(dto.codigoMunicipio);
+        if (isNaN(codigoNunicipio)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar o município, pois o codigo Município aceita apenas números e vc tentou inserir: ${request.body.codigoMunicipio}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
         let codigoMunicipioExistente = await verificarCodigoMunicipio(dto)
         // Faz a validação utilizando o método citado anteriormente.
         if (!codigoMunicipioExistente) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Não foi possível alterar o Município, visto que não existe um município com o código: ${dto.codigoMunicipio}`,
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        const codigoUF = Number(request.body.codigoUF);
+        if (isNaN(codigoUF)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar o município, pois o codigo UF aceita apenas números e vc tentou inserir: ${dto.codigoUF}`
             };
             return response.status(400).json(jsonRetorno);
         }
@@ -186,6 +254,15 @@ async function alterarMunicipio(request, response) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Não foi possível alterar o Município, visto que não existe uma UF com o código: ${dto.codigoUF}`,
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        const status = Number(request.body.status);
+        if (isNaN(status)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar o Município, pois o status aceita apenas números!! E vc tentou inserir: ${dto.status}`
             };
             return response.status(400).json(jsonRetorno);
         }
@@ -230,5 +307,67 @@ async function alterarMunicipio(request, response) {
         await fecharConexao();
     }
 };
+
+municipio.delete('/', deletarMunicipio)
+
+async function deletarMunicipio(request, response) {
+    try {
+        // Captura os dados enviados na requisição
+        const dto = request.body;
+        // Abre a conexão com o banco de dados.
+        const conexaoAberta = await abrirConexao();
+
+        const codigoMunicipio = Number(dto.codigoMunicipio);
+        if (isNaN(codigoMunicipio)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível realizar a requisição, pois o codigo Município aceita apenas números. E vc tentou deletar pelo código: '${dto.codigoMunicipio}' `
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        // Verifica se o municipio com o codigoMunicipio informado existe no banco de dados.
+        const codigoMunicipioExistente = await verificarCodigoMunicipio(dto);
+        if (!codigoMunicipioExistente) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível excluir o Município, pois não existe um município com o código: ${dto.codigoMunicipio} `,
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+
+        // Gera o SQL para excluir o município da tabela TB_MUNICIPIO.
+        const deleteMunicipioSql = `
+            DELETE FROM TB_MUNICIPIO
+            WHERE "CODIGO_MUNICIPIO" = :codigoMunicipio
+        `;
+        const municipioDto = {
+            codigoMunicipio: dto.codigoMunicipio,
+        };
+        // Executa o SQL de exclusão do município.
+        let resultSetMunicipio = await conexaoAberta.execute(deleteMunicipioSql, municipioDto);
+        console.log('FORAM EXCLUÍDOS: ' + resultSetMunicipio.rowsAffected + ' REGISTROS DE MUNICIPIO NO BANCO DE DADOS.'); // Registros de endereço excluídos.
+
+        // Confirma as exclusões feitas e salva no banco de dados!
+        await commit();
+
+        // Ao final da requisição com status 200 (OK), retorna a lista com todas os Municípios presentes no banco de dados.
+        await consultarMunicipio(request, response);
+
+    } catch (err) {
+        // Tratamento de erros.
+        console.log(err);
+        await rollback();
+        let jsonRetorno = {
+            status: 400,
+            mensagem: 'Não foi possível excluir o município do banco de dados!',
+        };
+        response.status(400).json(jsonRetorno);
+    } finally {
+        // Fecha a conexão com o banco de dados.
+        await fecharConexao();
+    }
+}
 
 module.exports = municipio;

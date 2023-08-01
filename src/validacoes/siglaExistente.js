@@ -10,6 +10,21 @@ async function verificarSiglaExistente(dto, tabela) {
     return siglaExistente;
 }
 
+async function verificarRegistroSiglaExistente(dto, tabela, dto) {
+
+    let conexaoAberta = await abrirConexao();
+
+    // Verifica se a sigla existe na tabela, excluindo o registro em atualização pelo ID
+    let sqlRegistroExistente = `SELECT COUNT(*) FROM ${tabela}
+                                WHERE LOWER(SIGLA) = LOWER(:sigla)
+                                AND (CODIGO_UF IS NULL OR CODIGO_UF != :codigoUF)`;
+    let resultadoRegistroExistente = await conexaoAberta.execute(sqlRegistroExistente, { sigla: dto.sigla, codigoUF: dto.codigoUF });
+    let registroExistente = resultadoRegistroExistente.rows[0][0];
+
+    return registroExistente > 0;
+
+}
 module.exports = {
-    verificarSiglaExistente
+    verificarSiglaExistente,
+    verificarRegistroSiglaExistente
 }

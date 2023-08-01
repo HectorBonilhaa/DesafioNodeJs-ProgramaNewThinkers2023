@@ -1,4 +1,4 @@
-const { conexao, abrirConexao } = require('../database/conexao');
+const { conexao, abrirConexao, fecharConexao } = require('../database/conexao');
 
 async function verificarCodigoUFExistenteDelete(codigoUF) {
     const conexaoAberta = await abrirConexao();
@@ -51,10 +51,23 @@ async function verificarCodigoPessoa(dto) {
     return quantidadeRegistros;
 }
 
+async function verificarCodigoEndereco(dto) {
+    const conexaoAberta = await abrirConexao();
+
+    let sqlEnderecoExistente = `SELECT COUNT(*) FROM TB_ENDERECO WHERE CODIGO_ENDERECO = :codigoEndereco`;
+    let resultado = await conexaoAberta.execute(sqlEnderecoExistente, { codigoEndereco: dto.codigoEndereco });
+    let quantidadeRegistros = resultado.rows[0][0];
+    return quantidadeRegistros;
+}
+
+
+
 module.exports = {
     verificarCodigoUFExistenteDelete,
     verificarCodigoUFExistente,
     verificarCodigoMunicipio,
     verificarCodigoBairro,
-    verificarCodigoPessoa
+    verificarCodigoPessoa,
+    verificarCodigoEndereco,
+   
 }

@@ -1,7 +1,7 @@
 const { Router } = require("express");
 const { abrirConexao, fecharConexao, rollback, conexao, commit, gerarSequence } = require("../database/conexao");
-const { verificarNomeExistente } = require('../validacoes/nomeExistente');
-const { verificarSiglaExistente } = require('../validacoes/siglaExistente');
+const { verificarNomeExistente, verificarRegistroNomeExistente } = require('../validacoes/nomeExistente');
+const { verificarSiglaExistente, verificarRegistroSiglaExistente } = require('../validacoes/siglaExistente');
 const { verificarCodigoUFExistenteDelete, verificarCodigoUFExistente } = require('../validacoes/codigoExistente');
 
 const uf = Router();
@@ -18,7 +18,7 @@ async function consultarUF(request, response) {
         // Cria um objeto dto vazio para armazenar os valores dos parâmetros de filtro.
         let dto = {};
         // Define uma 'Lista' filtroParametros contendo os nomes dos parâmetros que podem ser usados como filtragem da tabela UF.
-        const filtroParametros = ['status', 'sigla', 'nome'];
+        const filtroParametros = ['status'];
         // Itera sobre cada parâmetro de filtro e, se estiver presente na solicitação(request.query[param]), adiciona uma cláusula WHERE na consulta sql e adiciona o valor do parâmetro ao objeto dto.
         filtroParametros.forEach((parametro, index) => {
             // Verifica se os parâmetros da constante filtroParametros estão presentes na query.
@@ -45,20 +45,87 @@ async function consultarUF(request, response) {
             sql += ' CODIGO_UF = :codigoUF';
             dto.codigoUF = request.query.codigoUF;
         }
+    
+        if (request.query.status) {
+            const status = Number(request.query.status);
+            if (isNaN(status)) {
+                let jsonRetorno = {
+                    status: 400,
+                    mensagem: `Não foi possível realizar a consulta, pois o status aceita apenas números!! E vc pesquisou por: ${request.query.status}`
+                };
+                return response.status(400).json(jsonRetorno);
+            }
+        }
+
+        if (request.query.sigla) {
+            const sigla = String(request.query.sigla);
+
+            sql += Object.keys(dto).length === 0 ? ' WHERE' : ' AND';
+            sql += ' SIGLA = :sigla';
+            dto.sigla = request.query.sigla;
+        }
+
+        if (request.query.nome) {
+            const nome = String(request.query.nome);
+
+            sql += Object.keys(dto).length === 0 ? ' WHERE' : ' AND';
+            sql += ' NOME = :nome';
+            dto.nome = request.query.nome;
+        }
 
         // Executa a consulta SQL utilizando o objeto conexaoAberta e os valores dos parâmetros de filtro. (sql, dto)
         let resultado = await conexaoAberta.execute(sql, dto);
-        // Mapeia o resultado da consulta para um array listaUFs, onde cada objeto e sua posição é representado.
-        let listaUFs = resultado.rows.map(row => ({
-            codigoUF: row[0],
-            sigla: row[1],
-            nome: row[2],
-            status: row[3]
-        }));
-        // Método do Javascript para ordenar uma lista.
-        // após a arrow function, ao utilizar b antes do a faz com que a lista seja ordenada de forma decrescente.
-        listaUFs.sort((a, b) => b.codigoUF - a.codigoUF);
-        // Gera o log com os possíveis dados que podem ou não existir na tabela UF.
+        let listaUFs = []
+
+        if (request.query.sigla) {
+            if (resultado.rows.length > 0) {
+                const row1 = resultado.rows[0];
+                listaUFs = {
+                    codigoUF: row1[0],
+                    sigla: row1[1],
+                    nome: row1[2],
+                    status: row1[3]
+                };
+            }
+        }
+
+        if (request.query.nome) {
+            if (resultado.rows.length > 0) {
+                const row1 = resultado.rows[0];
+                listaUFs = {
+                    codigoUF: row1[0],
+                    sigla: row1[1],
+                    nome: row1[2],
+                    status: row1[3]
+                };
+            }
+        }
+
+        if (!request.query.codigoUF && !request.query.sigla && !request.query.nome) {
+
+            // Mapeia o resultado da consulta para um array listaUFs, onde cada objeto e sua posição é representado.
+            listaUFs = resultado.rows.map(row => ({
+                codigoUF: row[0],
+                sigla: row[1],
+                nome: row[2],
+                status: row[3]
+            }));
+            listaUFs.sort((a, b) => b.codigoUF - a.codigoUF);
+
+        } else {
+            if (request.query.codigoUF) {
+                if (resultado.rows.length > 0) {
+                    const row = resultado.rows[0];
+                    listaUFs = {
+                        codigoUF: row[0],
+                        sigla: row[1],
+                        nome: row[2],
+                        status: row[3]
+                    };
+                }
+            }
+        }
+
         console.log(resultado.rows);
         // Gera o status 200 e gera a lista em formato json caso ocorra tudo certo!
         response.status(200).json(listaUFs);
@@ -102,8 +169,18 @@ uf.post('/', async (request, response) => {
             };
             return response.status(400).json(jsonRetorno);
         }
+
+            const status = Number(request.body.status);
+            if (isNaN(status)) {
+                let jsonRetorno = {
+                    status: 400,
+                    mensagem: `Não foi possível inserir a UF, pois o status aceita apenas números!! E você tentou inserir: ${dto.status}`
+                };
+                return response.status(400).json(jsonRetorno);
+            }
+        
         // Valida apenas inserções do status com valor 1.
-        if (dto.status !== 1) {
+        if (dto.status != 1) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Não é possível adicionar um status com um número diferente de 1!  Status inserido: ${dto.status}`
@@ -176,8 +253,9 @@ uf.put('/', async (request, response) => {
 
         // Variável responsável por chamar o método de validação de nome já existente no banco de dados.
         let nomeExistente = await verificarNomeExistente(dto, 'TB_UF');
+        let registroNomeExistente = await verificarRegistroNomeExistente(dto, 'TB_UF', dto);
         // Verifica se já existe um registro com o mesmo nome
-        if (nomeExistente > 0) {
+        if (nomeExistente && registroNomeExistente) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Já existe um registro com o mesmo nome: ${dto.nome}`
@@ -187,11 +265,22 @@ uf.put('/', async (request, response) => {
 
         // Variável responsável por chamar o método de validação de sigla já existente no banco de dados.
         let siglaExistente = await verificarSiglaExistente(dto, 'TB_UF');
-        // Verifica se já existe um registro com a mesma sigla
-        if (siglaExistente > 0) {
+        // Variável responsável por chamar o método de validação de sigla já existente no banco de dados.
+        let registroSiglaExistente = await verificarRegistroSiglaExistente(dto, 'TB_UF', dto)
+        // Verifica se já existe um registro com a mesma sigla e se o registro é o mesmo que está sendo atualizado
+        if (siglaExistente && registroSiglaExistente) {
             let jsonRetorno = {
                 status: 400,
                 mensagem: `Já existe um registro com a mesma sigla: ${dto.sigla}`
+            };
+            return response.status(400).json(jsonRetorno);
+        }
+
+        const status = Number(request.body.status);
+        if (isNaN(status)) {
+            let jsonRetorno = {
+                status: 400,
+                mensagem: `Não foi possível alterar a UF, pois o status aceita apenas números!! E vc tentou inserir: ${dto.status}`
             };
             return response.status(400).json(jsonRetorno);
         }
