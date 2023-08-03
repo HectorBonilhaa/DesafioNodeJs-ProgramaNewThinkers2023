@@ -1,6 +1,6 @@
 const { Router } = require("express");
 const { abrirConexao, fecharConexao, conexao, commit, rollback, gerarSequence } = require('../database/conexao')
-const { verificarCodigoPessoa, verificarCodigoBairro, verificarCodigoEndereco } = require("../validacoes/codigoExistente");
+const { verificarCodigoPessoa, verificarCodigoBairro, verificarCodigoEndereco, buscarEnderecos } = require("../validacoes/codigoExistente");
 const { verificarLoginExistente, verificarRegistroLoginExistente } = require("../validacoes/loginExistente");
 
 const pessoa = Router();
@@ -331,7 +331,7 @@ async function atualizarPessoa(request, response) {
     try {
         const dto = request.body;
         const conexaoAberta = await abrirConexao();
-      
+
         const codigoPessoa = Number(request.body.codigoPessoa);
         if (isNaN(codigoPessoa)) {
             let jsonRetorno = {
@@ -403,6 +403,40 @@ async function atualizarPessoa(request, response) {
         console.log('FORAM ALTERADOS: ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS.');
 
         const enderecos = dto.enderecos || [];
+
+
+        listaEnderecos = await buscarEnderecos(dto);
+
+        console.log(`LISTA COM TODOS OS ENDEREÇOS DE ${dto.nome} ${dto.sobrenome}:`, listaEnderecos);
+
+        const enderecosParaExcluir = [];
+        for (let i = 0; i < listaEnderecos.length; i++) {
+            const endereco = listaEnderecos[i][0];
+            const enderecoEncontrado = enderecos.find(
+                (e) => e.codigoEndereco == endereco
+            );
+            console.log("ENDEREÇO PRESENTE NA REQUISIÇÃO:", enderecoEncontrado);
+            if (!enderecoEncontrado) {
+                enderecosParaExcluir.push(endereco);
+            }
+        }
+
+        console.log("ENDEREÇOS A SEREM EXCLUÍDOS:", enderecosParaExcluir);
+
+        for (const endereco of enderecosParaExcluir) {
+            const deleteEnderecoSql = `
+                DELETE FROM TB_ENDERECO
+                WHERE "CODIGO_ENDERECO" = :codigoEndereco
+            `;
+
+            const enderecoDto = {
+                codigoEndereco: endereco
+            };
+
+            resultSet = await conexaoAberta.execute(deleteEnderecoSql, enderecoDto);
+            console.log('FORAM EXCLUÍDOS ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS');
+        }
+
 
         for (const endereco of enderecos) {
             if (endereco.codigoEndereco) {
@@ -489,6 +523,24 @@ async function atualizarPessoa(request, response) {
 
             } else {
 
+                const codigoPessoa = Number(endereco.codigoPessoa);
+                if (isNaN(codigoPessoa)) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, pois o codigo Pessoa aceita apenas números e vc tentou inserir: ${endereco.codigoPessoa}`
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                let codigoPessoaExistente = await verificarCodigoPessoa(endereco);
+                if (!codigoPessoaExistente) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, visto que não existe uma Pessoa com o código: ${endereco.codigoPessoa}`,
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
                 dto.codigoEndereco = await gerarSequence('SEQUENCE_ENDERECO');
 
                 const insertEnderecoSql = `
@@ -506,11 +558,30 @@ async function atualizarPessoa(request, response) {
                     cep: endereco.cep || null
                 };
 
+                const codigoBairro = Number(enderecoDto.codigoBairro);
+                if (isNaN(codigoBairro)) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, pois o codigo Bairro aceita apenas números e vc tentou inserir: ${enderecoDto.codigoBairro}`
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+                let codigoBairroExistente = await verificarCodigoBairro(enderecoDto)
+                // Faz a validação utilizando o método citado anteriormente.
+                if (!codigoBairroExistente) {
+                    let jsonRetorno = {
+                        status: 400,
+                        mensagem: `Não foi possível alterar a Pessoa, visto que não existe um bairro com o código: ${enderecoDto.codigoBairro}`,
+                    };
+                    return response.status(400).json(jsonRetorno);
+                }
+
+
                 let resultSet = await conexaoAberta.execute(insertEnderecoSql, enderecoDto);
                 console.log('FORAM INSERIDOS ' + resultSet.rowsAffected + ' REGISTROS NO BANCO DE DADOS');
             }
         }
-
 
         await commit();
         await consultarPessoa(request, response);

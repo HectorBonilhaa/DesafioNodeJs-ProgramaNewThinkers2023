@@ -60,6 +60,16 @@ async function verificarCodigoEndereco(dto) {
     return quantidadeRegistros;
 }
 
+async function buscarEnderecos(dto) {
+    const conexaoAberta = await abrirConexao();
+    const sqlTodosEnderecos = `SELECT * FROM TB_ENDERECO WHERE CODIGO_PESSOA = :codigoPessoa`;
+    const resultado = await conexaoAberta.execute(sqlTodosEnderecos, { codigoPessoa: dto.codigoPessoa });
+    const listaEnderecos = resultado.rows;
+
+    // Utiliza a função flat() para transformar a matriz em um único array
+    
+    return listaEnderecos;
+}
 
 
 module.exports = {
@@ -69,5 +79,6 @@ module.exports = {
     verificarCodigoBairro,
     verificarCodigoPessoa,
     verificarCodigoEndereco,
-   
+    buscarEnderecos
+
 }
